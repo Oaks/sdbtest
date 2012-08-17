@@ -1,5 +1,4 @@
 #include <QtGui>
-//#include <QTest>
 #include "window.h"
 #include "sdb.h"
 
@@ -7,6 +6,8 @@ extern QHash<int,struct s_sdb_recode *> hash_sdb_recode;
 extern QHash<int,struct s_kp *> h_KP;
 extern int WritePort(int, int, int, int);
 extern int ReadPort(int, int, int);
+
+QHash<int,int> h_ComboBoxKP_KP;
 
 Window::Window()
 {
@@ -25,12 +26,15 @@ Window::Window()
         // Формируем ComboBox со списком КП.
  m_kp           = new QComboBox();
  m_kp->addItem("Все КП");
-
+                //Список формируем из словаря h_KP.
  QHash<int,struct s_kp *>::const_iterator j = h_KP.constBegin();
+ int i_kp=1;
  while (j != h_KP.constEnd()) {
     struct s_kp *kp = j.value();
-    QString str = kp->KPNAME;
-    m_kp->addItem(str);
+    int key_kp = j.key();
+    m_kp->addItem(kp->KPNAME);
+    h_ComboBoxKP_KP[i_kp]=key_kp;   // Привязка индекс ComboBox к игдукс h_KP;
+    ++i_kp;
     ++j;
  }
 
@@ -79,9 +83,6 @@ Window::Window()
  vbxlayout->addWidget(m_kp);
  vbxlayout->addWidget(lwg);
  this->setLayout(vbxlayout);
- //this->setMinimumWidth(lwg->size());
- //this->setMaximumWidth(lwg->size());
- //lwg->WidthMode= Maximum;
 
     // Определить связку сигнал - слот.
  //connect(lwg, SIGNAL(itemClicked(QListWidgetItem *)),
@@ -101,7 +102,11 @@ Window::Window()
 
 void Window::KP_selected(int index)
 {
-  qDebug()<< "KP_selected"<<index;
+  qDebug()<< "ComboBox_selected"<<index;
+  int index_kp=0;
+  if ( index != 0 ) index_kp = h_ComboBoxKP_KP[index];
+  qDebug()<< "KP_selected"<<index_kp;
+
   lwg->clear();         // Очистить список параметров.
   h_ListItem2index.clear();  //Очистить словарь списка.
 
@@ -114,7 +119,7 @@ void Window::KP_selected(int index)
      struct s_sdb_recode *sdb = i.value();
      QString str = sdb->NOTE;
      int     key = i.key();
-     if ( sdb->I_NKP != index && index !=0 ) goto escape; // параметр не принадлежит данному КП.
+     if ( index != 0 && sdb->I_NKP != index_kp ) goto escape; // параметр не принадлежит данному КП.
              // В список вносим параметры, к которым привязаны ADAM'ы.
       if (     ( (sdb->A_TYPE == 1 ) && (sdb->O_PORT_ADAM != 0 || sdb->I_PORT_ADAM != 0) )
             || ( (sdb->A_TYPE == 3 ) && sdb->O_PORT_ADAM != 0  )

@@ -15,12 +15,13 @@
 #define SpeedCOM    B115200 //4098//Скорост сом порт modbus
 #define TimeoutMODBUS 200  //Таймаут read modbus
 #define COUNT_WRITE_MBUS 4
-#define VERSION "0.7"
+#define VERSION "0.81"
 
 int OpenCom();
 int ReadPort(int,int,int);
 int WritePort(int,int,int,int);
 int Read_KP(void);
+void TestBound(int, int, int,int);
 
 // Работа с сом портами
 struct sComADAM ComADAM;
@@ -28,53 +29,67 @@ char masCOMPort[MAX_PORT] = {0};
 
 QHash<int,struct s_sdb_recode *> hash_sdb_recode;
 QHash<int,struct s_kp *> h_KP;
+QHash<int,int> h_ADAM_iConnections;
+QHash<int,int> h_ADAM_oConnections;
 
  int main(int argc, char *argv[])
  {
 
   QApplication app(argc, argv);
 
-  QStringList driverList;
-  driverList = QSqlDatabase::drivers();
-
+        // Настроить вывод кириллицы в виджете.
   QTextCodec::setCodecForTr      (QTextCodec::codecForName("Windows-1251"));
   QTextCodec::setCodecForCStrings(QTextCodec::codecForName("Windows-1251"));
   QTextCodec::setCodecForLocale  (QTextCodec::codecForName("Windows-1251"));
   int status=-1;
 
-  qDebug() << "Opening database" << endl;
+  qWarning() << "Opening database" << endl;
 
-         // Печать установленных драйверов MySQL.
+        // Печать установленных драйверов MySQL.
+  QStringList driverList;
+  driverList = QSqlDatabase::drivers();
   qDebug() << "Available db drivers: " ;
   QStringList::const_iterator it;
   for (it = driverList.constBegin();it != driverList.constEnd(); ++it)
        qDebug() << (*it).toLocal8Bit().constData() << "   ";
   qDebug() << endl;
+
         //  Открываем базу данных "base" ,используя драйвер QODBC.
         //
+  QString namebase = "basedon";
   QSqlDatabase db = QSqlDatabase::addDatabase("QODBC");
-  db.setDatabaseName("basedon");
+  db.setDatabaseName(namebase);
          // печатаем ошибку, если не открыли.
   if(!(status=db.open()))
       {qDebug() <<  "Cannot open database:" << db.lastError().driverText()
                                             << db.lastError().databaseText();
-       messbox("База данных не открыта");
+       messbox("База данных "+namebase+" не открыта",db.lastError().driverText());
        return -1; }
-  else qDebug() <<  "Opened database:" ;
+
+  qDebug() <<  "Opened database:" ;
   qDebug() << "database base:\n" << db.tables() << "\n";
             // Из таблицы kp базы данных создаем внутренний
             // аналог - словарь h_KP.
   if ( (status=Read_KP()) !=0 ) return status;
-            // таблица sdb_recode
+
+            // таблица sdb_recode содержит подключение  параметров к ADAM.
+            //
   QSqlQuery query;
   if(! query.exec("SELECT * FROM sdb_recode")) {
       qDebug() << "Unable to execute \" query.exec(\"SELECT * FROM sdb_recode\") \"\n ";
+      messbox("Unable to execute  query.exec");
       return(-1);
   }
   struct s_sdb_recode *sdb_recode;
   QSqlRecord rec = query.record();
+  int s_id;
+  int iport, iaddress, ibit;
+  int oport, oaddress, obit;
+  int itestkey, otestkey;
+
   while(query.next()){
       sdb_recode= new struct s_sdb_recode;
+      s_id=
       sdb_recode->S_ID=query.value(rec.indexOf("S_ID")).toInt();
       sdb_recode->PNAME=query.value(rec.indexOf("PNAME")).toString();
       sdb_recode->NOTE=query.value(rec.indexOf("NOTE")).toString();
@@ -87,11 +102,17 @@ QHash<int,struct s_kp *> h_KP;
       sdb_recode->O_GROUPK=query.value(rec.indexOf("O_GROUPK")).toInt();
       sdb_recode->O_NRKEY=query.value(rec.indexOf("O_NRKEY")).toInt();
       sdb_recode->O_KEY_INV=query.value(rec.indexOf("O_KEY_INV")).toInt();
+      iport=
       sdb_recode->I_PORT_ADAM=query.value(rec.indexOf("I_PORT_ADAM")).toInt();
+      iaddress =
       sdb_recode->I_ADR_ADAM=query.value(rec.indexOf("I_ADR_ADAM")).toInt();
+      ibit =
       sdb_recode->I_NR_ADAM=query.value(rec.indexOf("I_NR_ADAM")).toInt();
+      oport=
       sdb_recode->O_PORT_ADAM=query.value(rec.indexOf("O_PORT_ADAM")).toInt();
+      oaddress=
       sdb_recode->O_ADR_ADAM=query.value(rec.indexOf("O_ADR_ADAM")).toInt();
+      obit=
       sdb_recode->O_NR_ADAM=query.value(rec.indexOf("O_NR_ADAM")).toInt();
       sdb_recode->A_TYPE=query.value(rec.indexOf("A_TYPE")).toInt();
       sdb_recode->TAGE_LAMP=query.value(rec.indexOf("TAGE_LAMP")).toString();
@@ -99,7 +120,9 @@ QHash<int,struct s_kp *> h_KP;
       sdb_recode->TAGE_TIT=query.value(rec.indexOf("TAGE_TIT")).toString();
       sdb_recode->state_key= -1;
 
-
+      TestBound(iport, iaddress, ibit, s_id);     // Проверить на допустимые значения.
+      TestBound(oport, oaddress, obit, s_id);
+      
         // Определим в массиве masCOMPort адреса заявленных портов ADAM
         // для OpenCom().
       if (sdb_recode->O_PORT_ADAM != 0)
@@ -107,25 +130,80 @@ QHash<int,struct s_kp *> h_KP;
       if (sdb_recode->I_PORT_ADAM != 0)
           masCOMPort[ sdb_recode->I_PORT_ADAM ] = 1;
 
+        // Внесем в словарь hash_sdb_recode очередную запись базы данных.
       if (!hash_sdb_recode.contains(sdb_recode->S_ID))
           hash_sdb_recode[sdb_recode->S_ID] = sdb_recode;
-      else { qDebug() << "base error\n"; return -1;}
-  }
-   status=OpenCom();           //Проинициализировать ADAM'ы.
-   if (status){
+      else { qDebug() << "base error: id dublicate\n"; return -1;}
+
+      // Формируем словарь h_ADAM_iConnections : ADAM присоедиение(ввод) -> параметр БД.
+      // С его помощью ищем дубликатные присоединения.
+
+                    // Создаем интегральный ключ словаря.
+      itestkey = iport | iaddress << 8 | ibit << (8*2);
+      if ( iport != 0){
+        if (!h_ADAM_iConnections.contains(itestkey))
+            h_ADAM_iConnections[itestkey] = s_id;
+        else { messbox( QString("Дубликатное подключение параметров\n БД с индексами %1 %2")
+                                .arg(s_id)
+                                .arg(h_ADAM_iConnections[itestkey]));
+             return -1;
+             }
+      }
+
+      // Формируем словарь h_ADAM_oConnections : ADAM присоедиение(вывод) -> параметр БД.
+      // С его помощью ищем дубликатные присоединения.
+
+      // Создаем интегральный ключ словаря.
+      otestkey = oport | oaddress << 8 | obit << (8*2);
+      if ( oport != 0){
+          if (!h_ADAM_oConnections.contains(otestkey))
+              h_ADAM_oConnections[otestkey] = s_id;
+          else { messbox( QString("Дубликатное подключение параметров\n БД с индексами %1 %2")
+                          .arg(s_id)
+                          .arg(h_ADAM_oConnections[otestkey]));
+              return -1;
+          }
+      }
+}
+
+  // Открыть порты  ADAM'ов.
+  //
+  status=OpenCom();
+  if (status){                        // Не все порты открыты.
+    QString errports;                 // Определить - какие.
+    QString allports = "\n из заявленных ";
     for (int i=0; i<MAX_PORT; i++){
-      if ( masCOMPort[i] < 0 ) errstr="";
-      else
-
+          // "Собираем" все заявленные порты.
+      if ( masCOMPort[i] != 0) allports += QString("   %1").arg(i);
+          // На индексах не окрытых портов в masCOMPort[] стоят -1.
+      if ( masCOMPort[i] < 0 ) errports+= QString("   %1").arg(i);
+      else continue;
     }
-
-       messbox("Ошибка при открытии портов ADAM");
+    messbox("Ошибка при открытии портов ADAM: " + errports + allports);
+  }
 
    Window window;
-   window.setWindowTitle(QString("СДЩ версия %1").arg(VERSION));
+   window.setWindowTitle(QString("СДЩ(%1) версия %2").arg(namebase).arg(VERSION));
    window.show();
    return app.exec();
  }
+    // Процедура проверяет параметры ADAM на валидность.
+ void TestBound(int port, int address, int bit,int s_id)
+ {
+  if ( port == 0 ) return;           //Порт не заявлен.
+  if ( port <1 || port >64){
+         messbox(QString("Значения портов ADAM в диапазоне 1-64. S_ID=%1").arg(s_id));
+         abort();
+     }
+  if ( address <1 || address >255){
+      messbox(QString("Значения адресов ADAM в диапазоне 1-255. S_ID=%1").arg(s_id));
+      abort();
+     }
+ if ( bit <0 || bit >7){
+     messbox(QString("Значения номера разряда ADAM в диапазоне 0-7. S_ID=%1").arg(s_id));
+     abort();
+     }
+}
 
  // Вывод окна с ошибкой.
 void messbox(QString str, QString extstr)
