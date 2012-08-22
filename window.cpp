@@ -33,7 +33,7 @@ Window::Window()
     struct s_kp *kp = j.value();
     int key_kp = j.key();
     m_kp->addItem(kp->KPNAME);
-    h_ComboBoxKP_KP[i_kp]=key_kp;   // Привязка индекс ComboBox к игдукс h_KP;
+    h_ComboBoxKP_KP[i_kp]=key_kp;   // Привязка индекс ComboBox к индекс h_KP;
     ++i_kp;
     ++j;
  }
@@ -160,14 +160,15 @@ void Window::ListItemActivated(QListWidgetItem *item)
 //
 void Window::ListItemSelected(QListWidgetItem *item)
 {
- QString str=item->text();      // Установить в строке выбора
- m_LineEdit->setText(str);      // наименование выбранного параметра.
-   qDebug()<< str;
  m_SelectedItem = item;         // Запомнить выбранный элемент списка.
  int index = h_ListItem2index[item]; // По словарю найти индекс строки бавы данных
                                 // sdb_recode соответствующую выбранному элементу списка.
         // Вывести порты адреса номера разрядов выбранного элемента.
  struct s_sdb_recode *sdb = hash_sdb_recode[index];
+       // Установить в строке выбора наименование выбранного параметра.
+ QString str = sdb->NOTE+"   "+'\"'+sdb->PNAME+'\"';
+ m_LineEdit->setText(str);
+   qDebug()<< str;
                                 // Ввод только для ключей.
  if (sdb->A_TYPE == 1 || sdb->A_TYPE == 4 ){
    m_Label_i->setText(QString("ВВОД        порт=%1 адрес=%2 разряд=%3")

@@ -1,4 +1,4 @@
-CONFIG += QT console
+#CONFIG += QT console
 QT +=    sql
 TEMPLATE = app
 HEADERS =   window.h \
