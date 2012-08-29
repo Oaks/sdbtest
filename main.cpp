@@ -6,7 +6,6 @@
 #include <QStringList>
 #include <iostream>
 
-#include "sdb.h"
 #include "window.h"
 #include "rllib/rlserial.h"
 #include "rllib/rlmodbus.h"
@@ -15,7 +14,7 @@
 #define SpeedCOM    B115200 //4098//Скорост сом порт modbus
 #define TimeoutMODBUS 200  //Таймаут read modbus
 #define COUNT_WRITE_MBUS 4
-#define VERSION "0.81"
+#define VERSION "0.85"
 
 int OpenCom();
 int ReadPort(int,int,int);

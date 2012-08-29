@@ -1,2 +1,7 @@
 *.exe
 *.o
+Makefile
+*.Debug
+*.Release
+sdbtest.pro.user
+release/
